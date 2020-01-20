@@ -1,0 +1,37 @@
+name: Docker Image CI
+
+on: [push]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v1
+    - name: Set up Docker Buildx
+      uses: crazy-max/ghaction-docker-buildx@v1
+      with:
+        version: latest
+    - name: Login to Docker Registry
+      env:
+        DOCKER_USERNAME: ${{ secrets.GITHUB_DOCKER_USERNAME }}
+        DOCKER_PASSWORD: ${{ secrets.GITHUB_DOCKER_PASSWORD }}
+      run: echo ${DOCKER_PASSWORD} | docker login -u ${DOCKER_USERNAME} --password-stdin
+    - name: Build and push the Docker images
+      run: |
+        BRANCH_NAME="${GITHUB_REF#refs/heads/}"
+        REF="${BRANCH_NAME:-master}"
+        OTHER_TAGS=""
+
+        if [[ "${REF}" = "master" ]]
+        then
+          OTHER_TAGS="${OTHER_TAGS} -t ${GITHUB_REPOSITORY}:latest"
+        fi
+
+        docker buildx build \
+          --push \
+          --platform linux/amd64 \
+          --cache-to type=registry,ref=${GITHUB_REPOSITORY}-cache,mode=max \
+          --cache-from ${GITHUB_REPOSITORY}-cache \
+          -t ${GITHUB_REPOSITORY}:${GITHUB_SHA} \
+          -t ${GITHUB_REPOSITORY}:${REF} \
+          ${OTHER_TAGS} .
