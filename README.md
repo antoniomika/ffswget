@@ -33,18 +33,18 @@ services:
 
 ## How to use a running instance
 
-1. Upload files:
+1. Upload files
 
-  - ```bash
-    curl --progress-bar --upload-file ~/Downloads/ubuntu-19.04-live-server-amd64.iso http://<yourhost>:8000
-    ```
+    - ```bash
+      curl --progress-bar --upload-file ~/Downloads/ubuntu-19.04-live-server-amd64.iso http://<yourhost>:8000
+      ```
 
 2. Download files from a URL like <https://send.firefox.com/download/file_id/#file_key>
 
-  - ```bash
-    wget http://<yourhost>:8000/file_id/file_key -O file_name.iso
-    ```
+    - ```bash
+      wget http://<yourhost>:8000/file_id/file_key -O file_name.iso
+      ```
 
-  - ```bash
-    wget http://<yourhost>:8000/download?url=https%3A%2F%2Fsend.firefox.com%2Fdownload%2Ffile_id%2F%23file_key -O file_name.iso
-    ```
+    - ```bash
+      wget http://<yourhost>:8000/download?url=https%3A%2F%2Fsend.firefox.com%2Fdownload%2Ffile_id%2F%23file_key -O file_name.iso
+      ```

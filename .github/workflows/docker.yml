@@ -21,9 +21,9 @@ jobs:
         BRANCH_NAME="${GITHUB_REF#refs/heads/}"
         REF="${BRANCH_NAME:-master}"
         OTHER_TAGS=""
-
-        if [[ "${REF}" = "master" ]]
+        if [[ ${GITHUB_REF} =~ ^refs\/tags\/v.*$ ]]
         then
+          REF="${GITHUB_REF//refs\/tags\/}"
           OTHER_TAGS="${OTHER_TAGS} -t ${GITHUB_REPOSITORY}:latest"
         fi
 
