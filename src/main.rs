@@ -8,10 +8,9 @@ extern crate mime_guess;
 use ffsend_api::pipe::crypto::EceCrypt;
 use ffsend_api::pipe::prelude::*;
 
-const MAIN_URL: &str = "https://send.firefox.com";
-
 lazy_static! {
     static ref HOST: String = get_host();
+    static ref MAIN_URL: String = get_url();
 }
 
 fn get_host() -> String {
@@ -25,6 +24,19 @@ fn get_host() -> String {
     }
 
     return host
+}
+
+fn get_url() -> String {
+    let args: Vec<String> = std::env::args().collect();
+    let main_url: String;
+
+    if args.len() > 2 {
+        main_url = args[2].clone();
+    } else {
+        main_url = "https://send.firefox.com".to_string();
+    }
+
+    return main_url
 }
 
 struct DownloadStream(rocket::response::Stream<ffsend_api::pipe::crypto::EceReader>, ffsend_api::action::metadata::MetadataResponse);
@@ -53,7 +65,7 @@ fn upload_file(file: String, data: rocket::Data, len: ContentLength) -> String {
 
 #[get("/<download>/<key>")]
 fn download_parts(download: String, key: String) -> Result<DownloadStream, rocket::response::status::NotFound<String>> {
-    handle_download(format!("{}/download/{}/#{}", MAIN_URL, download, key))
+    handle_download(format!("{}/download/{}/#{}", *MAIN_URL, download, key))
 }
 
 #[get("/download?<url>")]
@@ -77,7 +89,7 @@ fn handle_upload(file_name: String, file_data: rocket::Data, len: ContentLength)
     let encrypt = EceCrypt::encrypt(len.0 as usize, ikm, None);
     let reader = encrypt.reader(Box::new(file_data.open()));
 
-    let url_data = ffsend_api::url::Url::parse(MAIN_URL).unwrap();
+    let url_data = ffsend_api::url::Url::parse(&MAIN_URL).unwrap();
 
     let upload_call = ffsend_api::action::upload::Upload::new(
         ffsend_api::api::Version::V3,
@@ -92,7 +104,7 @@ fn handle_upload(file_name: String, file_data: rocket::Data, len: ContentLength)
         Ok(i) => {
             let id = i.0.id;
             let secret = ffsend_api::crypto::b64::encode(i.0.secret.as_slice());
-            format!("{}/{}/{}\n{}/download/{}/#{}\n", *HOST, id, secret.to_string(), MAIN_URL, id, secret.to_string())
+            format!("{}/{}/{}\n{}/download/{}/#{}\n", *HOST, id, secret.to_string(), *MAIN_URL, id, secret.to_string())
         },
         Err(e) => format!("{:?}", e)
     }
