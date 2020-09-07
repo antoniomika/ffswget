@@ -11,6 +11,8 @@ use ffsend_api::pipe::prelude::*;
 lazy_static! {
     static ref HOST: String = get_host();
     static ref MAIN_URL: String = get_url();
+    static ref DOWNLOADS: u8 = get_downloads();
+    static ref EXPIRATION: usize = get_expiration();
 }
 
 fn get_host() -> String {
@@ -37,6 +39,32 @@ fn get_url() -> String {
     }
 
     return main_url
+}
+
+fn get_downloads() -> u8 {
+    let args: Vec<String> = std::env::args().collect();
+    let downloads: u8;
+
+    if args.len() > 3 {
+        downloads = args[3].clone().as_bytes()[0];
+    } else {
+        downloads = 5;
+    }
+
+    return downloads
+}
+
+fn get_expiration() -> usize {
+    let args: Vec<String> = std::env::args().collect();
+    let expiration: usize;
+
+    if args.len() > 4 {
+        expiration = args[4].clone().parse().unwrap();
+    } else {
+        expiration = 86400;
+    }
+
+    return expiration
 }
 
 struct DownloadStream(rocket::response::Stream<ffsend_api::pipe::crypto::EceReader>, ffsend_api::action::metadata::MetadataResponse);
@@ -91,13 +119,15 @@ fn handle_upload(file_name: String, file_data: rocket::Data, len: ContentLength)
 
     let url_data = ffsend_api::url::Url::parse(&MAIN_URL).unwrap();
 
+    let params_data = ffsend_api::action::params::ParamsData::from(Some(*DOWNLOADS), Some(*EXPIRATION));
+
     let upload_call = ffsend_api::action::upload::Upload::new(
         ffsend_api::api::Version::V3,
         url_data,
         std::path::PathBuf::from(fake_path.clone()),
         Some(file_name.clone()),
         None,
-        None
+        Some(params_data.clone())
     );
 
     match upload_call.upload_send3(&upload_client, &key, &file, ffsend_api::action::upload::Reader::new(Box::new(reader))) {
