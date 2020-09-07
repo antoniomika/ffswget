@@ -1,7 +1,9 @@
 #![feature(proc_macro_hygiene, decl_macro)]
 
-#[macro_use] extern crate rocket;
-#[macro_use] extern crate lazy_static;
+#[macro_use]
+extern crate rocket;
+#[macro_use]
+extern crate lazy_static;
 extern crate ffsend_api;
 extern crate mime_guess;
 
@@ -25,7 +27,7 @@ fn get_host() -> String {
         host = "http://localhost:8000".to_string();
     }
 
-    return host
+    host
 }
 
 fn get_url() -> String {
@@ -38,7 +40,7 @@ fn get_url() -> String {
         main_url = "https://send.firefox.com".to_string();
     }
 
-    return main_url
+    main_url
 }
 
 fn get_downloads() -> u8 {
@@ -51,7 +53,7 @@ fn get_downloads() -> u8 {
         downloads = 5;
     }
 
-    return downloads
+    downloads
 }
 
 fn get_expiration() -> usize {
@@ -64,25 +66,59 @@ fn get_expiration() -> usize {
         expiration = 86400;
     }
 
-    return expiration
+    expiration
 }
 
-struct DownloadStream(rocket::response::Stream<ffsend_api::pipe::crypto::EceReader>, ffsend_api::action::metadata::MetadataResponse);
+struct DownloadStream(
+    rocket::response::Stream<ffsend_api::pipe::crypto::EceReader>,
+    ffsend_api::action::metadata::MetadataResponse,
+    Option<String>,
+);
 
 impl<'r> rocket::response::Responder<'r> for DownloadStream {
     fn respond_to(self, req: &rocket::Request) -> rocket::response::Result<'r> {
-        return rocket::Response::build_from(self.0.respond_to(req)?)
-            .raw_header("Content-Disposition", format!("attachment; filename=\"{}\"", self.1.metadata().name()))
-            .raw_header("Content-Length", self.1.metadata().size().unwrap().to_string())
-            .ok();
+        let mut res = rocket::Response::build_from(self.0.respond_to(req)?);
+
+        res.raw_header(
+            "Content-Length",
+            self.1.metadata().size().unwrap().to_string(),
+        );
+
+        match self.2 {
+            Some(_) => {
+                res.raw_header("Content-Type", self.1.metadata().mime().to_string());
+            }
+            None => {
+                res.raw_header(
+                    "Content-Disposition",
+                    format!("attachment; filename=\"{}\"", self.1.metadata().name()),
+                );
+            }
+        }
+
+        res.ok()
     }
 }
 
 struct ContentLength(u64, String);
 impl<'a, 'r> rocket::request::FromRequest<'a, 'r> for ContentLength {
     type Error = ();
-    fn from_request(request: &'a rocket::Request<'r>) -> rocket::request::Outcome<ContentLength, ()> {
-        rocket::Outcome::Success(ContentLength(request.headers().get_one("Content-Length").unwrap_or_default().parse::<u64>().unwrap_or_default(), request.headers().get_one("Host").unwrap_or_default().to_string()))
+    fn from_request(
+        request: &'a rocket::Request<'r>,
+    ) -> rocket::request::Outcome<ContentLength, ()> {
+        rocket::Outcome::Success(ContentLength(
+            request
+                .headers()
+                .get_one("Content-Length")
+                .unwrap_or_default()
+                .parse::<u64>()
+                .unwrap_or_default(),
+            request
+                .headers()
+                .get_one("Host")
+                .unwrap_or_default()
+                .to_string(),
+        ))
     }
 }
 
@@ -91,14 +127,32 @@ fn upload_file(file: String, data: rocket::Data, len: ContentLength) -> String {
     handle_upload(file, data, len)
 }
 
+#[get("/<download>/<key>/<file>")]
+fn download_parts_file(
+    download: String,
+    key: String,
+    file: String,
+) -> Result<DownloadStream, rocket::response::status::NotFound<String>> {
+    handle_download(
+        format!("{}/download/{}/#{}", *MAIN_URL, download, key),
+        Some(file),
+    )
+}
+
 #[get("/<download>/<key>")]
-fn download_parts(download: String, key: String) -> Result<DownloadStream, rocket::response::status::NotFound<String>> {
-    handle_download(format!("{}/download/{}/#{}", *MAIN_URL, download, key))
+fn download_parts(
+    download: String,
+    key: String,
+) -> Result<DownloadStream, rocket::response::status::NotFound<String>> {
+    handle_download(
+        format!("{}/download/{}/#{}", *MAIN_URL, download, key),
+        None,
+    )
 }
 
 #[get("/download?<url>")]
 fn download_url(url: String) -> Result<DownloadStream, rocket::response::status::NotFound<String>> {
-    handle_download(url)
+    handle_download(url, None)
 }
 
 fn handle_upload(file_name: String, file_data: rocket::Data, len: ContentLength) -> String {
@@ -106,10 +160,10 @@ fn handle_upload(file_name: String, file_data: rocket::Data, len: ContentLength)
     let upload_client = client_config.client(true);
 
     let fake_path = std::path::Path::new(file_name.as_str());
-    let file = ffsend_api::action::upload::FileData{
+    let file = ffsend_api::action::upload::FileData {
         name: file_name.as_str(),
         mime: mime_guess::from_path(fake_path.clone()).first_or_octet_stream(),
-        size: len.0
+        size: len.0,
     };
 
     let key = ffsend_api::crypto::key_set::KeySet::generate(true);
@@ -119,7 +173,8 @@ fn handle_upload(file_name: String, file_data: rocket::Data, len: ContentLength)
 
     let url_data = ffsend_api::url::Url::parse(&MAIN_URL).unwrap();
 
-    let params_data = ffsend_api::action::params::ParamsData::from(Some(*DOWNLOADS), Some(*EXPIRATION));
+    let params_data =
+        ffsend_api::action::params::ParamsData::from(Some(*DOWNLOADS), Some(*EXPIRATION));
 
     let upload_call = ffsend_api::action::upload::Upload::new(
         ffsend_api::api::Version::V3,
@@ -127,20 +182,36 @@ fn handle_upload(file_name: String, file_data: rocket::Data, len: ContentLength)
         std::path::PathBuf::from(fake_path.clone()),
         Some(file_name.clone()),
         None,
-        Some(params_data.clone())
+        Some(params_data.clone()),
     );
 
-    match upload_call.upload_send3(&upload_client, &key, &file, ffsend_api::action::upload::Reader::new(Box::new(reader))) {
+    match upload_call.upload_send3(
+        &upload_client,
+        &key,
+        &file,
+        ffsend_api::action::upload::Reader::new(Box::new(reader)),
+    ) {
         Ok(i) => {
             let id = i.0.id;
             let secret = ffsend_api::crypto::b64::encode(i.0.secret.as_slice());
-            format!("{}/{}/{}\n{}/download/{}/#{}\n", *HOST, id, secret.to_string(), *MAIN_URL, id, secret.to_string())
-        },
-        Err(e) => format!("{:?}", e)
+            format!(
+                "{}/{}/{}\n{}/download/{}/#{}\n",
+                *HOST,
+                id,
+                secret.to_string(),
+                *MAIN_URL,
+                id,
+                secret.to_string()
+            )
+        }
+        Err(e) => format!("{:?}", e),
     }
 }
 
-fn handle_download(download_url: String) -> Result<DownloadStream, rocket::response::status::NotFound<String>> {
+fn handle_download(
+    download_url: String,
+    file_path: Option<String>,
+) -> Result<DownloadStream, rocket::response::status::NotFound<String>> {
     let client_config = ffsend_api::client::ClientConfig::default();
     let download_client = client_config.client(true);
 
@@ -148,23 +219,34 @@ fn handle_download(download_url: String) -> Result<DownloadStream, rocket::respo
         Ok(i) => i,
         Err(e) => {
             println!("{}", e);
-            return Err(rocket::response::status::NotFound(format!("Unable to parse data url {:?}", e)))
-        },
+            return Err(rocket::response::status::NotFound(format!(
+                "Unable to parse data url {:?}",
+                e
+            )));
+        }
     };
 
     let file = match ffsend_api::file::remote_file::RemoteFile::parse_url(data_url, None) {
         Ok(i) => i,
         Err(e) => {
             println!("{}", e);
-            return Err(rocket::response::status::NotFound(format!("Unable to parse file {:?}", e)))
+            return Err(rocket::response::status::NotFound(format!(
+                "Unable to parse file {:?}",
+                e
+            )));
         }
     };
 
-    let meta_res = match ffsend_api::action::metadata::Metadata::new(&file, None, true).invoke(&download_client) {
+    let meta_res = match ffsend_api::action::metadata::Metadata::new(&file, None, true)
+        .invoke(&download_client)
+    {
         Ok(i) => i,
         Err(e) => {
             println!("meta {}", e);
-            return Err(rocket::response::status::NotFound(format!("Unable to retrieve metadata {:?}", e)))
+            return Err(rocket::response::status::NotFound(format!(
+                "Unable to retrieve metadata {:?}",
+                e
+            )));
         }
     };
 
@@ -176,26 +258,42 @@ fn handle_download(download_url: String) -> Result<DownloadStream, rocket::respo
         path_buf.clone(),
         None,
         false,
-        Some(meta_res.clone())
+        Some(meta_res.clone()),
     );
 
-    let key = ffsend_api::crypto::key_set::KeySet::from(
-        &file,
-        None
-    );
+    let key = ffsend_api::crypto::key_set::KeySet::from(&file, None);
 
     let ikm = key.secret().to_vec();
 
     let (reader, len) = match download_call.create_file_reader(&key, &meta_res, &download_client) {
         Ok(i) => i,
-        Err(e) => return Err(rocket::response::status::NotFound(format!("Not found {:?}", e)))
+        Err(e) => {
+            return Err(rocket::response::status::NotFound(format!(
+                "Not found {:?}",
+                e
+            )))
+        }
     };
 
     let decrypt_reader = EceCrypt::decrypt(len as usize, ikm.clone()).reader(Box::new(reader));
 
-    Ok(DownloadStream(rocket::response::Stream::from(decrypt_reader), meta_res.clone()))
+    Ok(DownloadStream(
+        rocket::response::Stream::from(decrypt_reader),
+        meta_res.clone(),
+        file_path,
+    ))
 }
 
 fn main() {
-    rocket::ignite().mount("/", routes![upload_file, download_parts, download_url]).launch();
+    rocket::ignite()
+        .mount(
+            "/",
+            routes![
+                upload_file,
+                download_parts,
+                download_url,
+                download_parts_file
+            ],
+        )
+        .launch();
 }
